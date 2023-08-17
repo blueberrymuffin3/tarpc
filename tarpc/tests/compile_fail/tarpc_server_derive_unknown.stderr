@@ -1,0 +1,5 @@
+error: cannot find derive macro `IDontExist` in this scope
+ --> tests/compile_fail/tarpc_server_derive_unknown.rs:1:49
+  |
+1 | #[tarpc::service(derive_serde = false, derive = "IDontExist")]
+  |                                                 ^^^^^^^^^^^^

@@ -1,0 +1,43 @@
+error[E0119]: conflicting implementations of trait `Serialize` for type `WorldRequest`
+ --> tests/compile_fail/serde_transport/tarpc_server_derive_duplicate.rs:3:1
+  |
+3 | #[tarpc::service(derive = "Deserialize", derive = "Serialize")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^-----------^^
+  | |                                                 |
+  | |                                                 first implementation here
+  | conflicting implementation for `WorldRequest`
+  |
+  = note: this error originates in the derive macro `tarpc::serde::Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0119]: conflicting implementations of trait `Serialize` for type `WorldResponse`
+ --> tests/compile_fail/serde_transport/tarpc_server_derive_duplicate.rs:3:1
+  |
+3 | #[tarpc::service(derive = "Deserialize", derive = "Serialize")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^-----------^^
+  | |                                                 |
+  | |                                                 first implementation here
+  | conflicting implementation for `WorldResponse`
+  |
+  = note: this error originates in the derive macro `tarpc::serde::Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0119]: conflicting implementations of trait `Deserialize<'_>` for type `WorldRequest`
+ --> tests/compile_fail/serde_transport/tarpc_server_derive_duplicate.rs:3:1
+  |
+3 | #[tarpc::service(derive = "Deserialize", derive = "Serialize")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^-------------^^^^^^^^^^^^^^^^^^^^^^^^
+  | |                         |
+  | |                         first implementation here
+  | conflicting implementation for `WorldRequest`
+  |
+  = note: this error originates in the derive macro `tarpc::serde::Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0119]: conflicting implementations of trait `Deserialize<'_>` for type `WorldResponse`
+ --> tests/compile_fail/serde_transport/tarpc_server_derive_duplicate.rs:3:1
+  |
+3 | #[tarpc::service(derive = "Deserialize", derive = "Serialize")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^-------------^^^^^^^^^^^^^^^^^^^^^^^^
+  | |                         |
+  | |                         first implementation here
+  | conflicting implementation for `WorldResponse`
+  |
+  = note: this error originates in the derive macro `tarpc::serde::Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
