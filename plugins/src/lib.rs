@@ -29,13 +29,11 @@ use syn::{
 /// Accumulates multiple errors into a result.
 /// Only use this for recoverable errors, i.e. non-parse errors. Fatal errors should early exit to
 /// avoid further complications.
-macro_rules! extend_errors {
-    ($errors: ident, $e: expr) => {
-        match $errors {
-            Ok(_) => $errors = Err($e),
-            Err(ref mut errors) => errors.extend($e),
-        }
-    };
+fn extend_errors<T>(errors: &mut syn::Result<T>, error: syn::Error) {
+    match errors {
+        Ok(_) => *errors = Err(error),
+        Err(errors) => errors.extend(error),
+    }
 }
 
 struct Service {
@@ -67,24 +65,24 @@ impl Parse for Service {
         let mut ident_errors = Ok(());
         for rpc in &rpcs {
             if rpc.ident == "new" {
-                extend_errors!(
-                    ident_errors,
+                extend_errors(
+                    &mut ident_errors,
                     syn::Error::new(
                         rpc.ident.span(),
                         format!(
                             "method name conflicts with generated fn `{}Client::new`",
                             ident.unraw()
-                        )
-                    )
+                        ),
+                    ),
                 );
             }
             if rpc.ident == "serve" {
-                extend_errors!(
-                    ident_errors,
+                extend_errors(
+                    &mut ident_errors,
                     syn::Error::new(
                         rpc.ident.span(),
-                        format!("method name conflicts with generated fn `{ident}::serve`")
-                    )
+                        format!("method name conflicts with generated fn `{ident}::serve`"),
+                    ),
                 );
             }
         }
@@ -115,15 +113,15 @@ impl Parse for RpcMethod {
                     args.push(captured);
                 }
                 FnArg::Typed(captured) => {
-                    extend_errors!(
-                        errors,
-                        syn::Error::new(captured.pat.span(), "patterns aren't allowed in RPC args")
+                    extend_errors(
+                        &mut errors,
+                        syn::Error::new(captured.pat.span(), "patterns aren't allowed in RPC args"),
                     );
                 }
                 FnArg::Receiver(_) => {
-                    extend_errors!(
-                        errors,
-                        syn::Error::new(arg.span(), "method args cannot start with self")
+                    extend_errors(
+                        &mut errors,
+                        syn::Error::new(arg.span(), "method args cannot start with self"),
                     );
                 }
             }
@@ -152,23 +150,23 @@ impl Parse for DeriveSerde {
         let meta_items = input.parse_terminated::<MetaNameValue, Comma>(MetaNameValue::parse)?;
         for meta in meta_items {
             if meta.path.segments.len() != 1 {
-                extend_errors!(
-                    result,
+                extend_errors(
+                    &mut result,
                     syn::Error::new(
                         meta.span(),
-                        "tarpc::service does not support this meta item"
-                    )
+                        "tarpc::service does not support this meta item",
+                    ),
                 );
                 continue;
             }
             let segment = meta.path.segments.first().unwrap();
             if segment.ident != "derive_serde" {
-                extend_errors!(
-                    result,
+                extend_errors(
+                    &mut result,
                     syn::Error::new(
                         meta.span(),
-                        "tarpc::service does not support this meta item"
-                    )
+                        "tarpc::service does not support this meta item",
+                    ),
                 );
                 continue;
             }
@@ -177,36 +175,36 @@ impl Parse for DeriveSerde {
                     result = result.and(Ok(Some(true)))
                 }
                 Lit::Bool(LitBool { value: true, .. }) => {
-                    extend_errors!(
-                        result,
+                    extend_errors(
+                        &mut result,
                         syn::Error::new(
                             meta.span(),
-                            "To enable serde, first enable the `serde1` feature of tarpc"
-                        )
+                            "To enable serde, first enable the `serde1` feature of tarpc",
+                        ),
                     );
                 }
                 Lit::Bool(LitBool { value: false, .. }) => result = result.and(Ok(Some(false))),
-                _ => extend_errors!(
-                    result,
+                _ => extend_errors(
+                    &mut result,
                     syn::Error::new(
                         meta.lit.span(),
-                        "`derive_serde` expects a value of type `bool`"
-                    )
+                        "`derive_serde` expects a value of type `bool`",
+                    ),
                 ),
             }
             derive_serde.push(meta);
         }
         if derive_serde.len() > 1 {
             for (i, derive_serde) in derive_serde.iter().enumerate() {
-                extend_errors!(
-                    result,
+                extend_errors(
+                    &mut result,
                     syn::Error::new(
                         derive_serde.span(),
                         format!(
                             "`derive_serde` appears more than once (occurrence #{})",
                             i + 1
-                        )
-                    )
+                        ),
+                    ),
                 );
             }
         }
