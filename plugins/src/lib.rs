@@ -13,7 +13,7 @@ extern crate syn;
 
 use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TokenStream2};
-use quote::{format_ident, quote, ToTokens};
+use quote::{format_ident, quote, quote_spanned, ToTokens};
 use syn::{
     braced,
     ext::IdentExt,
@@ -141,75 +141,95 @@ impl Parse for RpcMethod {
 
 // If `derive_serde` meta item is not present, defaults to cfg!(feature = "serde1").
 // `derive_serde` can only be true when serde1 is enabled.
-struct DeriveSerde(bool);
+#[derive(Default)]
+struct Derives {
+    ts: proc_macro2::TokenStream,
+    derive_serde: Option<bool>,
+}
 
-impl Parse for DeriveSerde {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut result = Ok(None);
-        let mut derive_serde = Vec::new();
-        let meta_items = input.parse_terminated::<MetaNameValue, Comma>(MetaNameValue::parse)?;
-        for meta in meta_items {
-            if meta.path.segments.len() != 1 {
-                extend_errors(
-                    &mut result,
-                    syn::Error::new(
-                        meta.span(),
-                        "tarpc::service does not support this meta item",
-                    ),
-                );
-                continue;
-            }
-            let segment = meta.path.segments.first().unwrap();
-            if segment.ident != "derive_serde" {
-                extend_errors(
-                    &mut result,
-                    syn::Error::new(
-                        meta.span(),
-                        "tarpc::service does not support this meta item",
-                    ),
-                );
-                continue;
-            }
-            match meta.lit {
-                Lit::Bool(LitBool { value: true, .. }) if cfg!(feature = "serde1") => {
-                    result = result.and(Ok(Some(true)))
-                }
-                Lit::Bool(LitBool { value: true, .. }) => {
+impl Derives {
+    fn parse_meta_item(result: &mut syn::Result<Self>, span: Span, name: &Ident, value: &Lit) {
+        if name == "derive_serde" {
+            match value {
+                Lit::Bool(LitBool { value: true, .. }) if !cfg!(feature = "serde1") => {
                     extend_errors(
-                        &mut result,
+                        result,
                         syn::Error::new(
-                            meta.span(),
+                            span,
                             "To enable serde, first enable the `serde1` feature of tarpc",
                         ),
                     );
                 }
-                Lit::Bool(LitBool { value: false, .. }) => result = result.and(Ok(Some(false))),
+                Lit::Bool(LitBool { value, .. }) => {
+                    if let Ok(result_ok) = result {
+                        match result_ok.derive_serde {
+                            None => result_ok.derive_serde = Some(*value),
+                            Some(_) => extend_errors(
+                                result,
+                                syn::Error::new(span, "`derive_serde` appears more than once"),
+                            ),
+                        }
+                    }
+                }
                 _ => extend_errors(
-                    &mut result,
+                    result,
                     syn::Error::new(
-                        meta.lit.span(),
+                        value.span(),
                         "`derive_serde` expects a value of type `bool`",
                     ),
                 ),
             }
-            derive_serde.push(meta);
+        } else if name == "derive" {
+            match value {
+                Lit::Str(lit_str) => {
+                    if let Ok(result) = result {
+                        let derive_ident = Ident::new(&lit_str.value(), lit_str.span());
+
+                        result.ts.extend(quote_spanned!(span =>
+                            #[derive(#derive_ident)]
+                        ));
+                    }
+                }
+                _ => extend_errors(result, syn::Error::new(span, "derive must be a string")),
+            }
+        } else {
+            extend_errors(
+                result,
+                syn::Error::new(span, "tarpc::service does not support this meta item"),
+            );
         }
-        if derive_serde.len() > 1 {
-            for (i, derive_serde) in derive_serde.iter().enumerate() {
-                extend_errors(
+    }
+
+    fn into_ts(mut self) -> proc_macro2::TokenStream {
+        if self.derive_serde.unwrap_or(cfg!(feature = "serde1")) {
+            self.ts.extend(
+                quote! {#[derive(tarpc::serde::Serialize, tarpc::serde::Deserialize)]
+                #[serde(crate = "tarpc::serde")]},
+            )
+        }
+
+        self.ts
+    }
+}
+
+impl Parse for Derives {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut result = Ok(Default::default());
+
+        let meta_items = input.parse_terminated::<MetaNameValue, Comma>(MetaNameValue::parse)?;
+        for meta in meta_items {
+            match (meta.path.segments.first(), meta.path.segments.len()) {
+                (Some(segment), 1) => {
+                    Self::parse_meta_item(&mut result, meta.span(), &segment.ident, &meta.lit)
+                }
+                _ => extend_errors(
                     &mut result,
-                    syn::Error::new(
-                        derive_serde.span(),
-                        format!(
-                            "`derive_serde` appears more than once (occurrence #{})",
-                            i + 1
-                        ),
-                    ),
-                );
+                    syn::Error::new(meta.span(), "malformed meta item"),
+                ),
             }
         }
-        let derive_serde = result?.unwrap_or(cfg!(feature = "serde1"));
-        Ok(Self(derive_serde))
+
+        result
     }
 }
 
@@ -241,7 +261,7 @@ pub fn derive_serde(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// - ResponseFut Future
 #[proc_macro_attribute]
 pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
-    let derive_serde = parse_macro_input!(attr as DeriveSerde);
+    let derives = parse_macro_input!(attr as Derives);
     let unit_type: &Type = &parse_quote!(());
     let Service {
         ref attrs,
@@ -256,14 +276,6 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         .collect();
     let args: &[&[PatType]] = &rpcs.iter().map(|rpc| &*rpc.args).collect::<Vec<_>>();
     let response_fut_name = &format!("{}ResponseFut", ident.unraw());
-    let derive_serialize = if derive_serde.0 {
-        Some(
-            quote! {#[derive(tarpc::serde::Serialize, tarpc::serde::Deserialize)]
-            #[serde(crate = "tarpc::serde")]},
-        )
-    } else {
-        None
-    };
 
     let methods = rpcs.iter().map(|rpc| &rpc.ident).collect::<Vec<_>>();
     let request_names = methods
@@ -306,7 +318,7 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
             .iter()
             .map(|name| parse_str(&format!("{name}Fut")).unwrap())
             .collect::<Vec<_>>(),
-        derive_serialize: derive_serialize.as_ref(),
+        derive_serialize: &derives.into_ts(),
     }
     .into_token_stream()
     .into()
@@ -447,7 +459,7 @@ struct ServiceGenerator<'a> {
     args: &'a [&'a [PatType]],
     return_types: &'a [&'a Type],
     arg_pats: &'a [Vec<&'a Pat>],
-    derive_serialize: Option<&'a TokenStream2>,
+    derive_serialize: &'a TokenStream2,
 }
 
 impl<'a> ServiceGenerator<'a> {
