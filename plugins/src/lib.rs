@@ -11,6 +11,8 @@ extern crate proc_macro2;
 extern crate quote;
 extern crate syn;
 
+use std::{fmt::format, str::FromStr};
+
 use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote, quote_spanned, ToTokens};
@@ -182,13 +184,22 @@ impl Derives {
         } else if name == "derive" {
             match value {
                 Lit::Str(lit_str) => {
-                    if let Ok(result) = result {
-                        let derive_ident = Ident::new(&lit_str.value(), lit_str.span());
-
-                        result.ts.extend(quote_spanned!(span =>
-                            #[derive(#derive_ident)]
-                        ));
-                    }
+                    match proc_macro2::TokenStream::from_str(&lit_str.value()) {
+                        Ok(ts) => {
+                            if let Ok(result) = result {
+                                result.ts.extend(quote_spanned!(value.span() =>
+                                    #[derive(#ts)]
+                                ))
+                            }
+                        }
+                        Err(err) => extend_errors(
+                            result,
+                            syn::Error::new(
+                                value.span(),
+                                format!("Error parsing derive parameters: {err:?}"),
+                            ),
+                        ),
+                    };
                 }
                 _ => extend_errors(result, syn::Error::new(span, "derive must be a string")),
             }
