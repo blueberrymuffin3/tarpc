@@ -98,9 +98,11 @@ pub fn bounded<SinkItem, Item>(
 #[derive(Debug)]
 pub struct Channel<Item, SinkItem> {
     #[pin]
-    rx: futures::channel::mpsc::Receiver<Item>,
+    /// The channel's receiver
+    pub rx: futures::channel::mpsc::Receiver<Item>,
     #[pin]
-    tx: futures::channel::mpsc::Sender<SinkItem>,
+    /// The channel's sender
+    pub tx: futures::channel::mpsc::Sender<SinkItem>,
 }
 
 impl<Item, SinkItem> Stream for Channel<Item, SinkItem> {
